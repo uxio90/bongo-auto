@@ -1,0 +1,494 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bongo Cat Farm</title>
+<style>
+:root {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --surface-2: #232321; --surface-3: #2c2c2a;
+  --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,0.10);
+  --series: #3987e5; --series-soft: rgba(57,135,229,0.16);
+  --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b;
+  --accent: #9085e9;
+  --radius: 16px;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--page); color: var(--ink); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+       -webkit-font-smoothing: antialiased; }
+body::before { content: ""; position: fixed; inset: 0; pointer-events: none; z-index: -1;
+  background: radial-gradient(900px 420px at 0% 0%, rgba(144,133,233,0.13), transparent 70%),
+              radial-gradient(700px 380px at 100% 0%, rgba(57,135,229,0.10), transparent 70%); }
+main { max-width: 1240px; margin: 0 auto; padding: 20px 16px 56px; }
+.card { background: var(--surface); border: 1px solid var(--ring); border-radius: var(--radius); padding: 18px; min-width: 0; }
+.eyebrow { font-size: 11px; font-weight: 600; letter-spacing: .09em; text-transform: uppercase; color: var(--muted); margin: 0 0 12px;
+           display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.eyebrow .aside { text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--muted); font-size: 12px; }
+.muted { color: var(--muted); font-size: 13px; }
+ul { margin: 0; padding: 0; list-style: none; }
+
+/* header */
+header { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin-bottom: 18px; }
+.brand { display: flex; align-items: center; gap: 14px; }
+.logo { width: 46px; height: 46px; border-radius: 14px; display: grid; place-items: center; font-size: 25px;
+        background: linear-gradient(140deg, #9085e9, #3987e5); box-shadow: 0 6px 24px rgba(144,133,233,.35); }
+h1 { font-size: 21px; margin: 0; letter-spacing: -.015em; }
+.sub { color: var(--muted); font-size: 13px; }
+.status { display: inline-flex; align-items: center; gap: 10px; padding: 8px 16px 8px 12px; border-radius: 999px;
+          background: var(--surface); border: 1px solid var(--ring); font-weight: 600; font-size: 14px; }
+.status .icon { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; color: #0b0b0b;
+                background: var(--muted); }
+.status.clicking .icon { background: var(--good); color: #fff; animation: pulse 1.8s infinite; }
+.status.paused .icon, .status.waiting .icon { background: var(--warning); }
+.status.stuck .icon, .status.stopped .icon { background: var(--critical); color: #fff; }
+.status .since { color: var(--muted); font-weight: 500; }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(12,163,12,.55); } 70% { box-shadow: 0 0 0 9px rgba(12,163,12,0); } 100% { box-shadow: 0 0 0 0 rgba(12,163,12,0); } }
+
+/* hero */
+.hero { display: grid; gap: 14px; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); margin-bottom: 14px; }
+.live { position: relative; padding: 0; overflow: hidden; background: #000; min-height: 260px; }
+.live img { width: 100%; height: 100%; object-fit: cover; display: block; image-rendering: auto; }
+.live .tag { position: absolute; left: 14px; top: 14px; display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px;
+             border-radius: 999px; background: rgba(13,13,13,.72); backdrop-filter: blur(6px); font-size: 12px; font-weight: 600;
+             border: 1px solid var(--ring); }
+.live .tag i { width: 8px; height: 8px; border-radius: 50%; background: var(--critical); animation: blink 1.4s infinite; }
+@keyframes blink { 50% { opacity: .25; } }
+.stats { display: grid; gap: 14px; grid-template-columns: 1fr 1fr; grid-template-rows: auto 1fr 1fr; }
+.counter { grid-column: 1 / -1; }
+.counter .big { font-size: clamp(40px, 6vw, 60px); font-weight: 750; letter-spacing: -.035em; line-height: 1.02; }
+.counter .meta { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 8px; }
+.delta { color: var(--good); font-weight: 600; }
+.tile .v { font-size: 28px; font-weight: 700; letter-spacing: -.02em; line-height: 1.1; }
+.tile .s { color: var(--muted); font-size: 12px; margin-top: 4px; min-height: 16px; }
+
+/* row 2 */
+.row { display: grid; gap: 14px; grid-template-columns: minmax(0, .9fr) minmax(0, 1.4fr) minmax(0, 1fr); margin-bottom: 14px; }
+.chests { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.chest { text-align: center; }
+.chest svg { width: 100%; max-width: 132px; display: block; margin: 0 auto; }
+.chest .track { stroke: var(--surface-3); }
+.chest .arc { stroke: var(--series); transition: stroke-dashoffset .9s ease; }
+.chest.ready .arc { stroke: var(--good); }
+.chest .time { font-size: 21px; font-weight: 700; fill: var(--ink); }
+.chest .lbl { font-size: 10px; fill: var(--muted); letter-spacing: .08em; text-transform: uppercase; }
+.chest .name { margin-top: 6px; font-weight: 600; font-size: 14px; }
+.chest .state { font-size: 12px; color: var(--muted); }
+.chest.ready .state { color: var(--good); font-weight: 600; }
+
+.viz { position: relative; }
+.viz svg { display: block; width: 100%; overflow: visible; }
+.viz .gridline { stroke: var(--grid); stroke-width: 1; }
+.viz .baseline { stroke: var(--axis); stroke-width: 1; }
+.viz .tick { fill: var(--muted); font-size: 11px; }
+.viz .seg { fill: var(--series); }
+.viz .seg:hover, .viz .bar:hover { fill: #5598e7; }
+.viz .lane { fill: var(--surface-2); }
+.viz .now { stroke: var(--ink-2); stroke-width: 1; stroke-dasharray: 3 3; }
+.viz .bar { fill: var(--series); }
+.tip { position: absolute; pointer-events: none; z-index: 5; background: #0d0d0d; border: 1px solid var(--ring); border-radius: 10px;
+       padding: 8px 10px; font-size: 12px; line-height: 1.5; white-space: nowrap; box-shadow: 0 8px 24px rgba(0,0,0,.5);
+       opacity: 0; transform: translate(-50%, calc(-100% - 10px)); transition: opacity .12s; }
+.tip b { font-size: 13px; }
+.tip.on { opacity: 1; }
+.summary { display: flex; gap: 22px; flex-wrap: wrap; margin-top: 12px; }
+.summary div b { display: block; font-size: 18px; }
+.summary div span { color: var(--muted); font-size: 12px; }
+
+.drops li { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--grid); }
+.drops li:last-child { border-bottom: 0; }
+.drops img, .drops .ph { width: 38px; height: 38px; border-radius: 10px; background: var(--surface-2); object-fit: contain; flex: none; }
+.drops .n { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.drops .t { color: var(--muted); font-size: 12px; }
+.drops .pr { margin-left: auto; font-weight: 600; font-size: 13px; }
+.empty { color: var(--muted); font-size: 13px; padding: 18px 4px; text-align: center; }
+.empty .e { font-size: 26px; display: block; margin-bottom: 4px; }
+
+/* log */
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { border: 1px solid var(--ring); background: transparent; color: var(--ink-2); border-radius: 999px; padding: 4px 11px;
+        font: inherit; font-size: 12px; cursor: pointer; }
+.chip.on { background: var(--ink); color: #0b0b0b; border-color: var(--ink); font-weight: 600; }
+#log { max-height: 320px; overflow: auto; margin-top: 4px; }
+#log li { display: grid; grid-template-columns: 22px 64px minmax(0, 1fr); gap: 8px; align-items: baseline; padding: 5px 2px;
+          border-bottom: 1px solid var(--grid); font-size: 13px; }
+#log li:last-child { border-bottom: 0; }
+#log .ic { text-align: center; }
+#log time { color: var(--muted); font: 12px ui-monospace, Consolas, monospace; }
+#log .msg { color: var(--ink-2); overflow-wrap: anywhere; }
+#log .msg b { color: var(--ink); font-weight: 600; }
+#log li.bad .msg { color: #e66767; }
+
+/* inventory */
+.invbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 14px; position: sticky; top: 0; z-index: 2;
+          background: var(--surface); padding: 6px 0; }
+.invbar input, .invbar select { background: var(--surface-2); color: var(--ink); border: 1px solid var(--ring); border-radius: 10px;
+  padding: 8px 12px; font: inherit; font-size: 14px; }
+.invbar input { flex: 1 1 220px; min-width: 0; }
+.items { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+.item { position: relative; background: var(--surface-2); border: 1px solid var(--ring); border-radius: 14px; padding: 14px 12px 12px;
+        text-align: center; transition: transform .15s, border-color .15s, box-shadow .15s; }
+.item:hover { transform: translateY(-3px); border-color: rgba(57,135,229,.6); box-shadow: 0 10px 26px rgba(0,0,0,.4); }
+.item .art { height: 86px; display: grid; place-items: center; border-radius: 10px;
+             background: radial-gradient(closest-side, rgba(255,255,255,.07), transparent); }
+.item img { max-width: 80px; max-height: 80px; }
+.item .n { font-weight: 600; font-size: 14px; margin-top: 8px; line-height: 1.25; }
+.item .x { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.item .p { margin-top: 8px; font-weight: 700; font-size: 15px; }
+.item .p small { color: var(--muted); font-weight: 500; font-size: 12px; }
+.item .na { color: var(--muted); font-weight: 500; font-size: 13px; }
+.item .qty { position: absolute; top: 8px; right: 8px; background: var(--ink); color: #0b0b0b; font-size: 11px; font-weight: 700;
+             border-radius: 999px; padding: 1px 8px; }
+.tier { position: absolute; top: 8px; left: 8px; font-size: 10px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+        border-radius: 999px; padding: 2px 8px; border: 1px solid var(--ring); color: var(--ink-2); }
+.tier.t3 { background: rgba(144,133,233,.18); border-color: rgba(144,133,233,.5); color: var(--ink); }
+.tier.t2 { background: rgba(57,135,229,.15); border-color: rgba(57,135,229,.45); color: var(--ink); }
+.err { color: var(--warning); }
+.pager { display: flex; justify-content: center; align-items: center; gap: 6px; margin-top: 16px; flex-wrap: wrap; }
+.pager button { min-width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--ring); background: var(--surface-2);
+                color: var(--ink-2); font: inherit; font-size: 13px; cursor: pointer; padding: 0 10px; }
+.pager button:hover:not(:disabled) { border-color: rgba(57,135,229,.6); color: var(--ink); }
+.pager button.on { background: var(--ink); color: #0b0b0b; border-color: var(--ink); font-weight: 700; }
+.pager button:disabled { opacity: .35; cursor: default; }
+.pager .info { color: var(--muted); font-size: 12px; margin: 0 8px; }
+
+@media (max-width: 980px) {
+  .hero, .row { grid-template-columns: 1fr; }
+}
+@media (max-width: 520px) {
+  .stats { grid-template-columns: 1fr; }
+  .chests { grid-template-columns: 1fr 1fr; }
+}
+</style></head>
+<body><main>
+
+<header>
+  <div class="brand"><div class="logo">🐱</div>
+    <div><h1>Bongo Cat Farm</h1><div class="sub" id="account">Steam account …</div></div></div>
+  <div id="status" class="status"><span class="icon" id="statusIcon">•</span><span id="statusText">Connecting…</span><span class="since" id="since"></span></div>
+</header>
+
+<section class="hero">
+  <div class="card live"><img id="cat" alt="Live screenshot of the cat, its chests and the counter"><span class="tag"><i></i>LIVE</span></div>
+  <div class="stats">
+    <div class="card counter">
+      <p class="eyebrow">Toque counter <span class="aside" id="counterAt"></span></p>
+      <div class="big" id="counter">—</div>
+      <div class="meta"><span class="muted"><span class="delta" id="gain">—</span> since launch</span><span class="muted" id="launchInfo"></span></div>
+    </div>
+    <div class="card tile"><p class="eyebrow">Last session</p><div class="v" id="rate">—</div><div class="s">toques per second</div></div>
+    <div class="card tile"><p class="eyebrow">Chests today</p><div class="v" id="chestsToday">0</div><div class="s" id="chestsSub"></div></div>
+    <div class="card tile"><p class="eyebrow">Inventory value</p><div class="v" id="value">—</div><div class="s" id="valueSub">lowest market price</div></div>
+    <div class="card tile"><p class="eyebrow">Items owned</p><div class="v" id="owned">—</div><div class="s" id="ownedSub"></div></div>
+  </div>
+</section>
+
+<section class="row">
+  <div class="card"><p class="eyebrow">Chests</p><div class="chests" id="chests"></div></div>
+  <div class="card"><p class="eyebrow">Clicking activity <span class="aside">last 3 hours</span></p>
+    <div class="viz" id="activity"></div>
+    <div class="summary"><div><b id="clickTime">—</b><span>clicking today</span></div>
+      <div><b id="sessionsCount">—</b><span>sessions today</span></div>
+      <div><b id="sessionGain">—</b><span>toques from sessions</span></div></div>
+  </div>
+  <div class="card"><p class="eyebrow">Drops today</p><ul class="drops" id="drops"></ul></div>
+</section>
+
+<section class="card" style="margin-bottom:14px">
+  <p class="eyebrow">Toques per session <span class="aside" id="sessionsAside">today</span></p>
+  <div class="viz" id="sessions"></div>
+</section>
+
+<section class="card" style="margin-bottom:14px">
+  <p class="eyebrow">Log
+    <span class="chips" id="chips">
+      <button class="chip on" data-f="all">All</button><button class="chip" data-f="claim">Chests</button>
+      <button class="chip" data-f="item">Drops</button><button class="chip" data-f="session">Sessions</button>
+      <button class="chip" data-f="bad">Problems</button></span></p>
+  <ul id="log"></ul>
+</section>
+
+<section class="card">
+  <p class="eyebrow">Steam inventory <span class="aside" id="invInfo"></span></p>
+  <div class="invbar">
+    <input id="fText" type="search" placeholder="Search item…" aria-label="Search item">
+    <select id="fType" aria-label="Type"><option value="">All types</option></select>
+    <select id="fSell" aria-label="Marketable">
+      <option value="">Marketable and not</option><option value="1">Marketable only</option><option value="0">Not marketable</option>
+    </select>
+    <select id="fSort" aria-label="Sort">
+      <option value="price">Price ↓</option><option value="name">Name</option><option value="count">Quantity ↓</option>
+    </select>
+  </div>
+  <div class="items" id="items"></div>
+  <nav class="pager" id="pager" aria-label="Inventory pages"></nav>
+</section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const num = v => v == null ? '—' : Math.round(v).toLocaleString('en-US');
+const usd = v => '$' + v.toFixed(2);
+const clock = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+const hm = ms => new Date(ms).toTimeString().slice(0, 5);
+const dur = s => s >= 3600 ? `${Math.floor(s / 3600)}h ${String(Math.floor(s % 3600 / 60)).padStart(2, '0')}m`
+                           : `${Math.floor(s / 60)}m ${String(Math.floor(s % 60)).padStart(2, '0')}s`;
+const NS = 'http://www.w3.org/2000/svg';
+let inv = null, logLines = [], logFilter = 'all', lastCounter = null;
+
+/* number that counts up to its new value */
+function animateNumber(el, to) {
+  const from = lastCounter ?? to;
+  lastCounter = to;
+  if (from === to) { el.textContent = num(to); return; }
+  const t0 = performance.now();
+  const step = t => {
+    const k = Math.min(1, (t - t0) / 700), e = 1 - Math.pow(1 - k, 3);
+    el.textContent = num(from + (to - from) * e);
+    if (k < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+/* tooltip shared by both charts */
+function tipFor(box) {
+  let tip = box.querySelector('.tip');
+  if (!tip) { tip = document.createElement('div'); tip.className = 'tip'; box.appendChild(tip); }
+  return {
+    show(html, x, y) { tip.innerHTML = html; tip.style.left = x + 'px'; tip.style.top = y + 'px'; tip.classList.add('on'); },
+    hide() { tip.classList.remove('on'); },
+  };
+}
+
+/* clicking activity: one lane, last 3 hours, a bar per clicking period */
+function drawActivity(segments, nowMs) {
+  const box = $('activity'), W = box.clientWidth || 600, H = 74, laneY = 8, laneH = 36;
+  const t1 = nowMs, t0 = nowMs - 3 * 3600e3, x = t => (t - t0) / (t1 - t0) * W;
+  let svg = `<svg viewBox="0 0 ${W} ${H}" height="${H}" role="img" aria-label="Clicking periods over the last 3 hours">
+    <rect class="lane" x="0" y="${laneY}" width="${W}" height="${laneH}" rx="8"/>`;
+  const first = Math.ceil(t0 / 1800e3) * 1800e3;
+  for (let t = first; t <= t1; t += 1800e3) {
+    svg += `<line class="gridline" x1="${x(t)}" x2="${x(t)}" y1="${laneY + laneH}" y2="${laneY + laneH + 6}"/>
+            <text class="tick" x="${x(t)}" y="${H - 6}" text-anchor="middle">${hm(t)}</text>`;
+  }
+  segments.forEach(([a, b], i) => {
+    if (b < t0) return;
+    const xa = Math.max(0, x(a)), xb = Math.max(xa + 3, x(b));
+    svg += `<rect class="seg" data-i="${i}" x="${xa}" y="${laneY + 4}" width="${xb - xa}" height="${laneH - 8}" rx="4"/>`;
+  });
+  svg += `<line class="now" x1="${W - 1}" x2="${W - 1}" y1="${laneY - 4}" y2="${laneY + laneH + 4}"/></svg>`;
+  box.innerHTML = svg;
+  const tip = tipFor(box);
+  box.querySelectorAll('.seg').forEach(r => {
+    r.addEventListener('mousemove', ev => {
+      const [a, b] = segments[r.dataset.i], rect = box.getBoundingClientRect();
+      tip.show(`<b>${hm(a)} – ${hm(b)}</b><br>clicking for ${dur((b - a) / 1000)}`, ev.clientX - rect.left, laneY);
+    });
+    r.addEventListener('mouseleave', tip.hide);
+  });
+}
+
+/* toques per session: one series, bars from a zero baseline */
+function drawSessions(sessions) {
+  const box = $('sessions');
+  if (!sessions.length) {
+    box.innerHTML = '<div class="empty"><span class="e">📊</span>Session summaries appear here once the script logs them (each time it stops clicking).</div>';
+    return;
+  }
+  const list = sessions.slice(-40), W = box.clientWidth || 900, H = 190, top = 14, bottom = 24, left = 44;
+  const max = Math.max(...list.map(s => s.gain), 1), nice = Math.pow(10, Math.floor(Math.log10(max)));
+  const yMax = Math.ceil(max / nice) * nice, y = v => top + (1 - v / yMax) * (H - top - bottom);
+  const slot = (W - left) / list.length, bw = Math.max(4, Math.min(34, slot - 2));
+  let svg = `<svg viewBox="0 0 ${W} ${H}" height="${H}" role="img" aria-label="Toques gained in each clicking session today">`;
+  for (let k = 0; k <= 4; k++) {
+    const v = yMax * k / 4;
+    svg += `<line class="${k ? 'gridline' : 'baseline'}" x1="${left}" x2="${W}" y1="${y(v)}" y2="${y(v)}"/>
+            <text class="tick" x="${left - 8}" y="${y(v) + 4}" text-anchor="end">${num(v)}</text>`;
+  }
+  list.forEach((s, i) => {
+    const cx = left + slot * i + slot / 2, h = Math.max(0, y(0) - y(Math.max(0, s.gain)));
+    const r = Math.min(4, bw / 2, h);
+    // rounded top, square at the baseline
+    svg += `<path class="bar" data-i="${i}" d="M${cx - bw / 2},${y(0)} v${-(h - r)} q0,${-r} ${r},${-r} h${bw - 2 * r} q${r},0 ${r},${r} v${h - r} z"/>
+            <rect data-i="${i}" class="hit" x="${left + slot * i}" y="${top}" width="${slot}" height="${H - top - bottom}" fill="transparent"/>`;
+  });
+  const every = Math.ceil(list.length / 8);
+  list.forEach((s, i) => {
+    if (i % every === 0) svg += `<text class="tick" x="${left + slot * i + slot / 2}" y="${H - 6}" text-anchor="middle">${s.start.slice(0, 5)}</text>`;
+  });
+  box.innerHTML = svg + '</svg>';
+  const tip = tipFor(box);
+  box.querySelectorAll('.hit').forEach(r => {
+    r.addEventListener('mousemove', ev => {
+      const s = list[r.dataset.i], rect = box.getBoundingClientRect();
+      tip.show(`<b>+${num(s.gain)} toques</b><br>${s.start.slice(0, 5)} – ${s.end.slice(0, 5)} · ${dur(s.seconds)}<br>${s.rate.toFixed(1)} per second`,
+               ev.clientX - rect.left, y(Math.max(0, s.gain)));
+    });
+    r.addEventListener('mouseleave', tip.hide);
+  });
+}
+
+function drawChests(timers, period) {
+  const C = 2 * Math.PI * 52;
+  $('chests').innerHTML = Object.entries(timers).map(([name, left]) => {
+    const ready = left <= 0, done = ready ? 1 : Math.max(0, Math.min(1, 1 - left / period));
+    return `<div class="chest${ready ? ' ready' : ''}">
+      <svg viewBox="0 0 132 132" role="img" aria-label="${esc(name)} chest: ${ready ? 'ready' : clock(left) + ' left'}">
+        <circle class="track" cx="66" cy="66" r="52" fill="none" stroke-width="10"/>
+        <circle class="arc" cx="66" cy="66" r="52" fill="none" stroke-width="10" stroke-linecap="round"
+          stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - done)}" transform="rotate(-90 66 66)"/>
+        <text class="time" x="66" y="70" text-anchor="middle">${ready ? '✓' : clock(left)}</text>
+        <text class="lbl" x="66" y="90" text-anchor="middle">${ready ? 'ready' : 'left'}</text>
+      </svg>
+      <div class="name">${name === 'Items' ? '🎁' : '😺'} ${esc(name)}</div>
+      <div class="state">${ready ? 'Ready to claim' : 'every 30 min · 1,000 toques'}</div></div>`;
+  }).join('');
+}
+
+function iconFor(name) {
+  const it = inv && inv.items.find(i => i.name === name);
+  return it && it.icon;
+}
+
+function drawDrops(drops) {
+  $('drops').innerHTML = drops.slice(0, 6).map(d => {
+    const icon = iconFor(d.name);
+    return `<li>${icon ? `<img src="${esc(icon)}" alt="">` : '<span class="ph"></span>'}
+      <div style="min-width:0"><div class="n">${esc(d.name)}</div><div class="t">${esc(d.time)} · ${esc(d.type)}</div></div>
+      <span class="pr">${d.usd == null ? '<span class="muted">—</span>' : usd(d.usd)}</span></li>`;
+  }).join('') || '<li class="empty" style="display:block;border:0"><span class="e">🎁</span>No drops yet today.<br>New items show up when the inventory refreshes (every 10 min).</li>';
+}
+
+function logKind(line) {
+  if (/chest claimed|ready: click sent$/.test(line)) return ['claim', '🎁'];
+  if (/new item:/.test(line)) return ['item', '✨'];
+  if (/stuck|not claimed|unreadable|could not|not open/.test(line)) return ['bad', '⚠️'];
+  if (/session:/.test(line)) return ['session', '📈'];
+  if (/idle: clicking/.test(line)) return ['', '▶️'];
+  if (/you are back|another window/.test(line)) return ['', '⏸️'];
+  if (/moved into position/.test(line)) return ['', '🐾'];
+  return ['', '•'];
+}
+
+function drawLog() {
+  const rows = logLines.map(l => [l, ...logKind(l)]).filter(([, k]) => logFilter === 'all' || k === logFilter);
+  $('log').innerHTML = rows.map(([l, k, ic]) => {
+    const time = l.slice(0, 8), msg = esc(l.slice(9)).replace(/^([^|:]+:)/, '<b>$1</b>');
+    return `<li class="${k}"><span class="ic">${ic}</span><time>${time}</time><span class="msg">${msg}</span></li>`;
+  }).join('') || '<li class="empty" style="display:block">Nothing of this kind in the latest lines.</li>';
+}
+
+const STATUS_ICON = { clicking: '▶', paused: 'Ⅱ', waiting: '…', stuck: '!', stopped: '■', unknown: '?' };
+
+async function refreshStatus() {
+  try {
+    const s = await (await fetch('/api/status')).json();
+    $('status').className = 'status ' + s.state;
+    $('statusIcon').textContent = STATUS_ICON[s.state] || '?';
+    $('statusText').textContent = s.state_text;
+    $('since').textContent = s.since ? 'since ' + s.since.slice(0, 5) : '';
+    const st = s.stats;
+    if (st.counter != null) animateNumber($('counter'), st.counter);
+    $('counterAt').textContent = st.counter_at ? 'read at ' + st.counter_at.slice(0, 5) : 'read when a session starts or ends';
+    $('gain').textContent = st.launch ? '+' + num(st.launch.toques) : '—';
+    $('launchInfo').textContent = st.launch ? `${st.launch.chests} chests · running ${st.launch.duration} (since ${st.launch.since})` : '';
+    $('rate').textContent = st.rate == null ? '—' : st.rate.toFixed(1);
+    $('chestsToday').textContent = s.claims.length;
+    $('chestsSub').textContent = s.claims.length ? 'last: ' + s.claims.at(-1).chest + ' at ' + s.claims.at(-1).time : 'none yet';
+    drawChests(s.timers, s.chest_period);
+    drawActivity(s.activity, s.now_ms);
+    const clickMs = s.activity.reduce((n, [a, b]) => n + (b - a), 0);
+    $('clickTime').textContent = dur(clickMs / 1000);
+    $('sessionsCount').textContent = s.activity.length;
+    $('sessionGain').textContent = s.sessions.length ? '+' + num(s.sessions.reduce((n, x) => n + x.gain, 0)) : '—';
+    drawSessions(s.sessions);
+    $('sessionsAside').textContent = s.sessions.length ? `${s.sessions.length} sessions today` : 'today';
+    drawDrops(s.drops);
+    logLines = s.log;
+    drawLog();
+  } catch (e) {
+    $('status').className = 'status stopped'; $('statusIcon').textContent = '■';
+    $('statusText').textContent = 'No connection to panel.py'; $('since').textContent = '';
+  }
+  $('cat').src = '/cat.png?t=' + Date.now();
+}
+
+const PAGE_SIZE = 24;
+let page = 0;
+
+function drawPager(pages, total) {
+  if (pages <= 1) { $('pager').innerHTML = total ? `<span class="info">${total} items</span>` : ''; return; }
+  // first, last, and the pages around the current one; gaps become an ellipsis
+  const shown = [...new Set([0, pages - 1, page - 1, page, page + 1])].filter(p => p >= 0 && p < pages).sort((a, b) => a - b);
+  let html = `<button data-p="${page - 1}" ${page === 0 ? 'disabled' : ''} aria-label="Previous page">‹</button>`;
+  shown.forEach((p, k) => {
+    if (k && p - shown[k - 1] > 1) html += '<span class="info">…</span>';
+    html += `<button data-p="${p}" class="${p === page ? 'on' : ''}">${p + 1}</button>`;
+  });
+  html += `<button data-p="${page + 1}" ${page === pages - 1 ? 'disabled' : ''} aria-label="Next page">›</button>`;
+  html += `<span class="info">${page * PAGE_SIZE + 1}–${Math.min(total, (page + 1) * PAGE_SIZE)} of ${total}</span>`;
+  $('pager').innerHTML = html;
+}
+
+function renderItems() {
+  if (!inv) return;
+  const text = $('fText').value.trim().toLowerCase(), type = $('fType').value, sell = $('fSell').value, sort = $('fSort').value;
+  const rows = inv.items.filter(i => (!text || i.name.toLowerCase().includes(text)) && (!type || i.type === type)
+                                     && (sell === '' || String(+i.marketable) === sell));
+  const price = i => i.marketable && i.price_usd != null ? i.price_usd : -1;
+  rows.sort(sort === 'name' ? (a, b) => a.name.localeCompare(b.name) : sort === 'count' ? (a, b) => b.count - a.count
+                            : (a, b) => price(b) - price(a) || a.name.localeCompare(b.name));
+  const pages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  page = Math.min(page, pages - 1);
+  drawPager(pages, rows.length);
+  $('items').innerHTML = rows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE).map(i => {
+    let p, tier = '';
+    if (!i.marketable) p = '<span class="na">Not marketable</span>';
+    else if (i.price_usd == null) p = '<span class="na">No listings</span>';
+    else {
+      p = usd(i.price_usd) + (i.count > 1 ? ` <small>· ${usd(i.price_usd * i.count)}</small>` : '');
+      tier = i.price_usd >= 5 ? '<span class="tier t3">$5+</span>' : i.price_usd >= 0.5 ? '<span class="tier t2">$0.5+</span>' : '';
+    }
+    return `<div class="item">${tier}${i.count > 1 ? `<span class="qty">×${i.count}</span>` : ''}
+      <div class="art">${i.icon ? `<img src="${esc(i.icon)}" alt="" loading="lazy">` : ''}</div>
+      <div class="n">${esc(i.name)}</div><div class="x">${esc(i.type)}</div><div class="p">${p}</div></div>`;
+  }).join('') || '<div class="empty" style="grid-column:1/-1"><span class="e">🔍</span>No items match these filters.</div>';
+}
+
+async function refreshInventory() {
+  try {
+    inv = await (await fetch('/api/inventory')).json();
+    if (inv.account) $('account').textContent = 'Steam account · ' + inv.account;
+    const count = inv.items.reduce((n, i) => n + i.count, 0), sellable = inv.items.filter(i => i.marketable).reduce((n, i) => n + i.count, 0);
+    $('owned').textContent = inv.updated ? count : '—';
+    $('ownedSub').textContent = inv.updated ? `${sellable} marketable` : '';
+    $('value').textContent = inv.prices_updated ? usd(inv.total_usd) : '—';
+    $('valueSub').textContent = inv.prices_error && !inv.prices_updated ? 'waiting for Steam prices' : 'lowest market price';
+    const notes = [inv.error, inv.prices_error].filter(Boolean).map(e => `<span class="err">${esc(e)}</span>`);
+    if (inv.updated) notes.push(`inventory ${inv.updated}`);
+    if (inv.prices_updated) notes.push(`prices ${inv.prices_updated}`);
+    $('invInfo').innerHTML = notes.join(' · ');
+    const types = [...new Set(inv.items.map(i => i.type))].sort(), current = $('fType').value;
+    $('fType').innerHTML = '<option value="">All types</option>' + types.map(t => `<option${t === current ? ' selected' : ''}>${esc(t)}</option>`).join('');
+    renderItems();
+  } catch (e) {}
+}
+
+['fText', 'fType', 'fSell', 'fSort'].forEach(id => $(id).addEventListener('input', () => { page = 0; renderItems(); }));
+$('pager').addEventListener('click', ev => {
+  const b = ev.target.closest('button[data-p]'); if (!b || b.disabled) return;
+  page = +b.dataset.p; renderItems();
+  $('items').scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+$('chips').addEventListener('click', ev => {
+  const b = ev.target.closest('.chip'); if (!b) return;
+  logFilter = b.dataset.f;
+  document.querySelectorAll('.chip').forEach(c => c.classList.toggle('on', c === b));
+  drawLog();
+});
+refreshInventory().then(refreshStatus);
+setInterval(refreshStatus, 3000);
+setInterval(refreshInventory, 30000);
+</script>
+</body></html>
