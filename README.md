@@ -10,7 +10,17 @@ prices.
 - Windows 10/11 and Python 3 with Pillow (`pip install pillow`).
 - Bongo Cat running on the **primary monitor at 2560×1440** (the cat, chest and counter positions are
   hard-coded for that resolution; see [Adjusting positions](#adjusting-positions)).
-- In Bongo Cat's settings, *always show chests* on (the script clicks them next to the cat).
+- Bongo Cat settings (names as they appear in the Spanish UI):
+
+  | Setting | Value | Why |
+  |---|---|---|
+  | *Mostrar cofre siempre* (always show chest) | on | The script clicks the chests next to the cat; hidden chests can't be claimed. |
+  | *Cofre de emojis* (emote chest) | on | Enables the second chest (emotes). |
+  | *Posición del cofre* (chest position) | 1 | The chest coordinates assume this layout. |
+  | Counter always visible (counter auto-hide off) | on | The script reads the counter to check clicks count and to log sessions. |
+  | Lock position / ignore mouse | off | The script drags the cat into place and clicks it. |
+  | *Animación de cofre*, *Mostrar indicador Afk* | any | Not needed by the script. |
+
 - The PC must stay **unlocked**: Windows ignores simulated input on the lock screen. While the script
   clicks, Windows sees activity, so it does not lock by idle on its own.
 
