@@ -20,14 +20,13 @@ import winreg
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from PIL import ImageGrab
+import bongo_auto  # shares the cat layout, so the live view follows the game window
 
 PORT = 8765
 HERE = os.path.dirname(os.path.abspath(__file__))
 LOG_PATH = os.path.join(HERE, "bongo_auto.log")
 REGISTRY_KEY = r"Software\Irox Games\BongoCat"
 CHESTS = {"TIME_LEFT_h": "Items", "EMOTE_CHEST_TIME_LEFT_h": "Emotes"}
-CAT_BOX = (2290, 1230, 2510, 1390)  # cat, chests and counter once the script placed the cat
 APP_ID = 3419430
 INVENTORY_PAGE = 2000  # Steam's maximum per request; more_items/last_assetid give the next page
 INVENTORY_PAGE_GAP_SECONDS = 3
@@ -434,7 +433,11 @@ def market_worker():
 
 def cat_png():
     try:
-        image = ImageGrab.grab(bbox=CAT_BOX, all_screens=True)
+        window = bongo_auto.game_window()
+        if not window:
+            return None
+        bongo_auto.update_layout(window)
+        image = bongo_auto.grab(bongo_auto.VIEW_BOX)
     except OSError:  # screen not readable, e.g. the PC is locked
         return None
     buffer = io.BytesIO()
@@ -479,7 +482,7 @@ def main():
     threading.Thread(target=inventory_worker, daemon=True).start()
     threading.Thread(target=market_worker, daemon=True).start()
     server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
-    print(f"Panel en http://localhost:{PORT}  (Ctrl+C para parar)", flush=True)
+    print(f"Panel at http://localhost:{PORT}  (Ctrl+C to stop)", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

@@ -22,16 +22,27 @@ from ctypes import wintypes
 
 from PIL import ImageGrab, ImageOps
 
-CAT_HEAD = (2395, 1325)
-CHESTS = {  # registry timer prefix -> screen position, valid once the cat is in position
-    "TIME_LEFT_h": (2345, 1327),  # items
-    "EMOTE_CHEST_TIME_LEFT_h": (2450, 1327),  # emotes
+# Layout. The game window covers its whole monitor; F1 puts the cat at the window's centre and
+# the script drags it to the bottom-right corner, so every point is an offset in physical pixels:
+# from the window's centre (right after F1) or from its bottom-right corner (once placed).
+# Measured on 2560x1440 with the cat at scale 1 (F1 resets the scale).
+GRAB_FROM_CENTER = (6, -28)  # a point on the cat's head right after F1
+DRAG_TO_FROM_CORNER = (-131, -93)  # where that point is dragged to
+HEAD_FROM_CORNER = (-165, -115)  # where the clicks go
+CHESTS_FROM_CORNER = {  # registry timer prefix -> chest, with "Chest position" = 1
+    "TIME_LEFT_h": (-215, -113),  # items
+    "EMOTE_CHEST_TIME_LEFT_h": (-110, -113),  # emotes
 }
-COUNTER_BOX = (2340, 1362, 2420, 1381)  # the toque counter below the cat (left, top, right, bottom)
+COUNTER_FROM_CORNER = (-220, -78, -140, -59)  # the toque counter below the cat (left, top, right, bottom)
+VIEW_FROM_CORNER = (-270, -210, -50, -50)  # cat, chests and counter, for the panel's live view
+
+# Screen coordinates, filled in by update_layout() from the game window's position and size.
+CAT_HEAD = CAT_DEFAULT_GRAB = CAT_DRAG_TO = (0, 0)
+CHESTS = {}
+COUNTER_BOX = VIEW_BOX = (0, 0, 0, 0)
+
 COUNTER_CHECK_SECONDS = 20  # while clicking, the counter must have changed after this long
 WIGGLE_OFFSET = (60, 60)  # where the cursor steps away to when the counter is stuck
-CAT_DEFAULT_GRAB = (1286, 692)  # a point on the cat's head right after F1
-CAT_DRAG_TO = (2429, 1347)  # where that point must end up for the positions above
 DRAG_STEPS = 40
 CLICK_HOLD_SECONDS = 0.035  # measured: ~14 clicks/s all count; 18/s and 22/s lose many
 CLICK_GAP_SECONDS = 0.035
@@ -44,7 +55,7 @@ REGISTRY_KEY = r"Software\Irox Games\BongoCat"
 LOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bongo_auto.log")
 LOG_MAX_BYTES = 5 * 1024 * 1024
 LOG_BACKUPS = 3
-OCR_SCRIPT =os.path.join(os.path.dirname(os.path.abspath(__file__)), "ocr.ps1")
+OCR_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ocr.ps1")
 OCR_IMAGE = os.path.join(tempfile.gettempdir(), "bongo_counter.png")  # overwritten on every read
 CHEST_COST = 1000  # toques a claimed chest takes off the counter
 
@@ -72,6 +83,34 @@ user32.FindWindowW.restype = wintypes.HWND
 user32.GetForegroundWindow.restype = wintypes.HWND
 user32.SetForegroundWindow.argtypes = [wintypes.HWND]
 user32.GetAsyncKeyState.restype = ctypes.c_short
+user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
+SM_CXSCREEN, SM_CYSCREEN = 0, 1
+
+
+def update_layout(window):
+    """Turn the offsets above into screen coordinates for the game window as it is now."""
+    global CAT_HEAD, CAT_DEFAULT_GRAB, CAT_DRAG_TO, CHESTS, COUNTER_BOX, VIEW_BOX
+    rect = wintypes.RECT()
+    user32.GetWindowRect(window, ctypes.byref(rect))
+    cx, cy = (rect.left + rect.right) // 2, (rect.top + rect.bottom) // 2
+    right, bottom = rect.right, rect.bottom
+
+    def corner(dx, dy):
+        return right + dx, bottom + dy
+
+    CAT_DEFAULT_GRAB = (cx + GRAB_FROM_CENTER[0], cy + GRAB_FROM_CENTER[1])
+    CAT_DRAG_TO = corner(*DRAG_TO_FROM_CORNER)
+    CAT_HEAD = corner(*HEAD_FROM_CORNER)
+    CHESTS = {prefix: corner(*offset) for prefix, offset in CHESTS_FROM_CORNER.items()}
+    COUNTER_BOX = corner(*COUNTER_FROM_CORNER[:2]) + corner(*COUNTER_FROM_CORNER[2:])
+    VIEW_BOX = corner(*VIEW_FROM_CORNER[:2]) + corner(*VIEW_FROM_CORNER[2:])
+
+
+def grab(box):
+    """Screenshot of a screen box; reads every monitor only when the box is off the primary one."""
+    on_primary = (box[0] >= 0 and box[1] >= 0 and box[2] <= user32.GetSystemMetrics(SM_CXSCREEN)
+                  and box[3] <= user32.GetSystemMetrics(SM_CYSCREEN))
+    return ImageGrab.grab(bbox=box, all_screens=not on_primary)
 
 
 def rotate_log():
@@ -142,7 +181,7 @@ def timer_seconds(prefix):
 def counter_snapshot():
     """Pixels of the toque counter, or None if the screen can't be read (e.g. locked)."""
     try:
-        return ImageGrab.grab(bbox=COUNTER_BOX).tobytes()  # primary monitor only: cheaper
+        return grab(COUNTER_BOX).tobytes()
     except OSError:
         return None
 
@@ -150,7 +189,7 @@ def counter_snapshot():
 def read_counter():
     """The toque counter as a number, read with Windows OCR (~0.5 s), or None."""
     try:
-        image = ImageGrab.grab(bbox=COUNTER_BOX).convert("L")
+        image = grab(COUNTER_BOX).convert("L")
         image = ImageOps.autocontrast(image).resize((image.width * 4, image.height * 4))
         ImageOps.expand(image, border=20, fill=image.getpixel((0, 0))).save(OCR_IMAGE)
         text = subprocess.run(
@@ -203,6 +242,7 @@ def check_chests(window):
 
 def place_cat(window):
     """Reset the cat with F1 and drag it into position, restoring cursor and focus."""
+    update_layout(window)  # the game may have been restarted or moved to another monitor
     original = cursor_position()
     foreground = user32.GetForegroundWindow()
     user32.SetForegroundWindow(window)
@@ -246,9 +286,13 @@ def main():
     if "--place" in sys.argv:
         return
     log(f"running: clicks after {IDLE_SECONDS}s idle, stops when you touch the PC")
-    launch_value = read_counter()
+    launch_value = read_counter() if window else None
     launch_time = time.monotonic()
-    log(f"counter at launch: {fmt_count(launch_value)}")
+    if window and launch_value is None:
+        log(f"counter not found at {COUNTER_BOX}: the cat's layout may not match this screen "
+            "(see Adjusting positions in README.md) or the counter is hidden")
+    else:
+        log(f"counter at launch: {fmt_count(launch_value)}")
     total_gain = 0  # toques earned while clicking, chests added back
     total_claims = 0
     session_value = None

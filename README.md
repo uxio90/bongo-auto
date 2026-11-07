@@ -8,18 +8,18 @@ prices.
 ## Requirements
 
 - Windows 10/11 and Python 3 with Pillow (`pip install pillow`).
-- Bongo Cat running on the **primary monitor at 2560×1440** (the cat, chest and counter positions are
-  hard-coded for that resolution; see [Adjusting positions](#adjusting-positions)).
-- Bongo Cat settings (names as they appear in the Spanish UI):
+- Bongo Cat running on any monitor and resolution: positions are worked out from the game window
+  (see [How positions are found](#how-positions-are-found)).
+- Bongo Cat settings (Spanish UI label in brackets):
 
   | Setting | Value | Why |
   |---|---|---|
-  | *Mostrar cofre siempre* (always show chest) | on | The script clicks the chests next to the cat; hidden chests can't be claimed. |
-  | *Cofre de emojis* (emote chest) | on | Enables the second chest (emotes). |
-  | *Posición del cofre* (chest position) | 1 | The chest coordinates assume this layout. |
+  | Always show chest (*Mostrar cofre siempre*) | on | The script clicks the chests next to the cat; hidden chests can't be claimed. |
+  | Emote chest (*Cofre de emojis*) | on | Enables the second chest (emotes). |
+  | Chest position (*Posición del cofre*) | 1 | The chest offsets assume this layout. |
   | Counter always visible (counter auto-hide off) | on | The script reads the counter to check clicks count and to log sessions. |
   | Lock position / ignore mouse | off | The script drags the cat into place and clicks it. |
-  | *Animación de cofre*, *Mostrar indicador Afk* | any | Not needed by the script. |
+  | Chest animation, show AFK indicator (*Animación de cofre*, *Mostrar indicador Afk*) | any | Not needed by the script. |
 
 - The PC must stay **unlocked**: Windows ignores simulated input on the lock screen. While the script
   clicks, Windows sees activity, so it does not lock by idle on its own.
@@ -28,11 +28,11 @@ prices.
 
 | What | Run | Does |
 |---|---|---|
-| Start / restart the farmer | `Lanzar.bat` | Stops any running copy, then starts `bongo_auto.py` minimized. The cat is moved into position. |
-| Stop the farmer | `Parar.bat` | Stops `bongo_auto.py`. |
+| Start / restart the farmer | `Start.bat` | Stops any running copy, then starts `bongo_auto.py` minimized. The cat is moved into position. |
+| Stop the farmer | `Stop.bat` | Stops `bongo_auto.py`. |
 | Open the panel | `Panel.bat` | Restarts `panel.py` and opens http://localhost:8765. |
 
-Start Bongo Cat first, then `Lanzar.bat`. Tip: create desktop shortcuts to the three `.bat` files
+Start Bongo Cat first, then `Start.bat`. Tip: create desktop shortcuts to the three `.bat` files
 (right click → *Send to* → *Desktop*); set them to run minimized.
 
 From a terminal: `python bongo_auto.py` (Ctrl+C to stop), `python bongo_auto.py --place` (only move
@@ -40,8 +40,8 @@ the cat and exit), `python panel.py`.
 
 ## What the farmer does
 
-1. **Places the cat**: F1 resets it to the centre of the screen, then it is dragged to the bottom-right
-   corner. This is repeated before every clicking session, because moving the mouse while a click is
+1. **Places the cat**: F1 resets it to the centre of the game window, then it is dragged to the
+   bottom-right corner. This is repeated before every clicking session, because moving the mouse while a click is
    held drags the cat away.
 2. **Clicks only when you are away**: after 15 s without keyboard/mouse input it clicks the cat at
    ~12–14 clicks/s (the fastest rate the game counts). Touching the mouse or a key pauses it at once.
@@ -79,9 +79,15 @@ inventory must be public. Steam rate-limits its public endpoints: the inventory 
 
 No screenshots are kept: the live view and counter checks are made in memory.
 
-## Adjusting positions
+## How positions are found
 
-All coordinates are constants at the top of `bongo_auto.py` (`CAT_HEAD`, `CHESTS`, `COUNTER_BOX`,
-`CAT_DEFAULT_GRAB`, `CAT_DRAG_TO`) and `panel.py` (`CAT_BOX`), in physical pixels of the primary
-monitor. On another resolution, run `python bongo_auto.py --place`, then measure where the cat's head,
-both chests and the counter end up and update those values.
+The Bongo Cat window covers its whole monitor. F1 puts the cat at the window's centre and the script
+drags it to the window's bottom-right corner, so every point it needs (cat head, both chests, counter)
+is an offset from that corner. `update_layout()` in `bongo_auto.py` reads the window's position and
+size each time the cat is placed and turns the offsets into screen coordinates, so other resolutions,
+another monitor or a restarted game all work without changes.
+
+The offsets were measured at 2560×1440 with the cat at scale 1 (F1 resets the scale). They assume the
+cat keeps the same size in pixels on other resolutions; if the game scaled it, the log says
+`counter not found at …` on start. In that case run `python bongo_auto.py --place` and adjust the
+`*_FROM_CORNER` offsets at the top of `bongo_auto.py`.
