@@ -12,16 +12,24 @@ Activity goes to bongo_auto.log.
 """
 import ctypes
 import os
+import re
+import subprocess
 import sys
+import tempfile
 import time
 import winreg
 from ctypes import wintypes
+
+from PIL import ImageGrab, ImageOps
 
 CAT_HEAD = (2395, 1325)
 CHESTS = {  # registry timer prefix -> screen position, valid once the cat is in position
     "TIME_LEFT_h": (2345, 1327),  # items
     "EMOTE_CHEST_TIME_LEFT_h": (2450, 1327),  # emotes
 }
+COUNTER_BOX = (2340, 1362, 2420, 1381)  # the toque counter below the cat (left, top, right, bottom)
+COUNTER_CHECK_SECONDS = 20  # while clicking, the counter must have changed after this long
+WIGGLE_OFFSET = (60, 60)  # where the cursor steps away to when the counter is stuck
 CAT_DEFAULT_GRAB = (1286, 692)  # a point on the cat's head right after F1
 CAT_DRAG_TO = (2429, 1347)  # where that point must end up for the positions above
 DRAG_STEPS = 40
@@ -34,6 +42,11 @@ RETRY_START_SECONDS = 30  # after failing to start clicking, e.g. session locked
 WINDOW_TITLE = "BongoCat"
 REGISTRY_KEY = r"Software\Irox Games\BongoCat"
 LOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bongo_auto.log")
+LOG_MAX_BYTES = 5 * 1024 * 1024
+LOG_BACKUPS = 3
+OCR_SCRIPT =os.path.join(os.path.dirname(os.path.abspath(__file__)), "ocr.ps1")
+OCR_IMAGE = os.path.join(tempfile.gettempdir(), "bongo_counter.png")  # overwritten on every read
+CHEST_COST = 1000  # toques a claimed chest takes off the counter
 
 VK_F1 = 0x70
 KEYBOARD_VKS = range(0x08, 0xFF)  # skips the mouse buttons, which we press ourselves
@@ -61,9 +74,23 @@ user32.SetForegroundWindow.argtypes = [wintypes.HWND]
 user32.GetAsyncKeyState.restype = ctypes.c_short
 
 
+def rotate_log():
+    """Past LOG_MAX_BYTES, shift bongo_auto.log -> .1 -> .2 ..., keeping LOG_BACKUPS old files."""
+    try:
+        if os.path.getsize(LOG_PATH) < LOG_MAX_BYTES:
+            return
+        for n in range(LOG_BACKUPS - 1, 0, -1):
+            if os.path.exists(f"{LOG_PATH}.{n}"):
+                os.replace(f"{LOG_PATH}.{n}", f"{LOG_PATH}.{n + 1}")
+        os.replace(LOG_PATH, f"{LOG_PATH}.1")
+    except OSError:  # missing file, or the panel has it open for a moment: try next time
+        pass
+
+
 def log(message):
     line = f"{time.strftime('%Y-%m-%d %H:%M:%S')} {message}"
     print(line, flush=True)
+    rotate_log()
     with open(LOG_PATH, "a", encoding="utf-8") as f:
         f.write(line + "\n")
 
@@ -112,8 +139,43 @@ def timer_seconds(prefix):
             index += 1
 
 
+def counter_snapshot():
+    """Pixels of the toque counter, or None if the screen can't be read (e.g. locked)."""
+    try:
+        return ImageGrab.grab(bbox=COUNTER_BOX).tobytes()  # primary monitor only: cheaper
+    except OSError:
+        return None
+
+
+def read_counter():
+    """The toque counter as a number, read with Windows OCR (~0.5 s), or None."""
+    try:
+        image = ImageGrab.grab(bbox=COUNTER_BOX).convert("L")
+        image = ImageOps.autocontrast(image).resize((image.width * 4, image.height * 4))
+        ImageOps.expand(image, border=20, fill=image.getpixel((0, 0))).save(OCR_IMAGE)
+        text = subprocess.run(
+            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", OCR_SCRIPT, OCR_IMAGE],
+            capture_output=True, text=True, timeout=10, creationflags=subprocess.CREATE_NO_WINDOW,
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    digits = re.sub(r"\D", "", text)
+    return int(digits) if digits else None
+
+
+def fmt_count(value):
+    return "?" if value is None else f"{value:,}".replace(",", ".")
+
+
+def fmt_duration(seconds):
+    seconds = int(seconds)
+    hours, rest = divmod(seconds, 3600)
+    return f"{hours}h {rest // 60:02d}m" if hours else f"{rest // 60}m {rest % 60:02d}s"
+
+
 def check_chests(window):
-    """Claim any ready chest, putting the cursor and focus back afterwards."""
+    """Claim any ready chest, putting the cursor and focus back afterwards. Returns clicks sent."""
+    sent = 0
     for prefix, point in CHESTS.items():
         seconds = timer_seconds(prefix)
         if seconds is None or seconds > 0:
@@ -124,13 +186,19 @@ def check_chests(window):
         time.sleep(0.2)  # the overlay only accepts the mouse once the cursor is over it
         if window_at(point) == window:
             click(hold=0.05)
-            log(f"{prefix.rstrip('_h')} ready: click sent")
+            time.sleep(0.5)
+            if (timer_seconds(prefix) or 0) > 0:  # the timer restarts only on a real claim
+                sent += 1
+                log(f"{prefix.rstrip('_h')} ready: click sent, chest claimed")
+            else:
+                log(f"{prefix.rstrip('_h')} ready: click sent, not claimed (not enough toques?)")
         else:
             log(f"{prefix.rstrip('_h')} ready: another window on top, skipped")
         time.sleep(0.1)
         user32.SetCursorPos(*original)
         if foreground:
             user32.SetForegroundWindow(foreground)
+    return sent
 
 
 def place_cat(window):
@@ -178,12 +246,40 @@ def main():
     if "--place" in sys.argv:
         return
     log(f"running: clicks after {IDLE_SECONDS}s idle, stops when you touch the PC")
+    launch_value = read_counter()
+    launch_time = time.monotonic()
+    log(f"counter at launch: {fmt_count(launch_value)}")
+    total_gain = 0  # toques earned while clicking, chests added back
+    total_claims = 0
+    session_value = None
+    session_start = 0.0
+    session_claims = 0
+
+    def end_session(reason):
+        nonlocal total_gain
+        end_value = read_counter()
+        seconds = time.monotonic() - session_start
+        if end_value is None or session_value is None:
+            log(f"{reason} | session: counter unreadable, {fmt_duration(seconds)}")
+            return
+        gain = end_value - session_value + session_claims * CHEST_COST
+        total_gain += gain
+        rate = gain / seconds if seconds else 0
+        log(
+            f"{reason} | session: {fmt_count(session_value)} -> {fmt_count(end_value)}, "
+            f"+{fmt_count(gain)} toques in {fmt_duration(seconds)} ({rate:.1f}/s), "
+            f"{session_claims} chests | since launch: +{fmt_count(total_gain)} toques, "
+            f"{total_claims} chests in {fmt_duration(time.monotonic() - launch_time)}"
+        )
 
     clicking = False
     user_foreground = None
     last_chest_check = 0.0
     last_guard_check = 0.0
     next_start_attempt = 0.0
+    last_counter = None
+    last_counter_check = 0.0
+    stuck_count = 0
     while True:
         window = game_window()
         now = time.monotonic()
@@ -192,9 +288,13 @@ def main():
             time.sleep(1)
             continue
 
-        if now - last_chest_check >= CHEST_CHECK_SECONDS:
+        # Chests wait until you are away, so the cursor never jumps while you use the PC.
+        if now - last_chest_check >= CHEST_CHECK_SECONDS and (clicking or idle_seconds() >= IDLE_SECONDS):
             last_chest_check = now
-            check_chests(window)
+            claimed = check_chests(window)
+            total_claims += claimed
+            if clicking:
+                session_claims += claimed
 
         if clicking:
             stop_reason = None
@@ -208,17 +308,50 @@ def main():
                 clicking = False
                 if user_foreground:
                     user32.SetForegroundWindow(user_foreground)
-                log(stop_reason)
+                end_session(stop_reason)
                 continue
+            if now - last_counter_check >= COUNTER_CHECK_SECONDS:
+                last_counter_check = now
+                snapshot = counter_snapshot()
+                if snapshot is not None and last_counter is not None:
+                    if snapshot != last_counter:
+                        if stuck_count:
+                            log("counter rising again")
+                        stuck_count = 0
+                    else:
+                        stuck_count += 1
+                        if stuck_count == 1:
+                            log("counter stuck: moving the mouse away and back")
+                            user32.SetCursorPos(CAT_HEAD[0] + WIGGLE_OFFSET[0], CAT_HEAD[1] + WIGGLE_OFFSET[1])
+                            time.sleep(0.3)
+                            user32.SetCursorPos(*CAT_HEAD)
+                            time.sleep(0.3)
+                        else:
+                            log("counter still stuck: putting the cat back in position")
+                            place_cat(window)
+                            stuck_count = 0
+                        snapshot = counter_snapshot()
+                        last_counter_check = time.monotonic()
+                last_counter = snapshot
+                continue  # re-run the "you are back" check before clicking again
             click()
             time.sleep(CLICK_GAP_SECONDS)
         elif idle_seconds() >= IDLE_SECONDS and now >= next_start_attempt:
             user_foreground = user32.GetForegroundWindow()
+            # Moving the mouse while a click is held drags the cat, which happens whenever
+            # you come back mid-click, so put it back in position before every session.
+            place_cat(window)
             user32.SetCursorPos(*CAT_HEAD)
             time.sleep(0.2)
             if cursor_position() == CAT_HEAD and window_at(CAT_HEAD) == window:
                 clicking = True
-                log("idle: clicking the cat")
+                last_counter = counter_snapshot()
+                last_counter_check = time.monotonic()
+                stuck_count = 0
+                session_value = read_counter()
+                session_start = time.monotonic()
+                session_claims = 0
+                log(f"idle: clicking the cat | counter {fmt_count(session_value)}")
             else:
                 next_start_attempt = now + RETRY_START_SECONDS
         else:
