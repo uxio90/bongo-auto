@@ -95,5 +95,19 @@ class RotateLogTest(unittest.TestCase):
         self.assertEqual(self.read(self.path + ".1"), "current log, past the limit")
 
 
+class StartupTest(unittest.TestCase):
+    def test_refuses_to_start_without_the_game(self):
+        with mock.patch.object(bongo_auto, "game_window", return_value=0), \
+                mock.patch.object(bongo_auto.user32, "MessageBoxW") as box, \
+                mock.patch.object(bongo_auto, "log") as log, \
+                mock.patch.object(bongo_auto, "place_cat") as place:
+            with self.assertRaises(SystemExit) as stop:
+                bongo_auto.main()
+        self.assertEqual(stop.exception.code, 1)
+        self.assertTrue(box.called)
+        self.assertIn("not open", log.call_args[0][0])
+        self.assertFalse(place.called)
+
+
 if __name__ == "__main__":
     unittest.main()

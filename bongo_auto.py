@@ -3,6 +3,7 @@
 Run:  python bongo_auto.py          (Ctrl+C or close the window to stop)
 Test: python bongo_auto.py --place  (only move the cat into position, then exit)
 
+It refuses to start (log line plus a message box) when Bongo Cat is not open.
 On start the cat is sent to the game's default spot with F1 and dragged into position.
 Simulated input only counts on the cat itself, so it clicks there at the fastest speed
 the game registers, after IDLE_SECONDS without you touching the PC. Moving the mouse or
@@ -65,6 +66,7 @@ KEYEVENTF_KEYUP = 0x0002
 MOUSEEVENTF_LEFTDOWN = 0x0002
 MOUSEEVENTF_LEFTUP = 0x0004
 GA_ROOT = 2
+MB_ICONWARNING = 0x30
 
 
 class LASTINPUTINFO(ctypes.Structure):
@@ -287,16 +289,19 @@ def place_cat(window):
 def main():
     user32.SetProcessDPIAware()
     window = game_window()
-    if window:
-        place_cat(window)
-    else:
-        log("Bongo Cat is not open; cat not moved")
+    if not window:
+        log("Bongo Cat is not open: not starting. Open the game, then run Start.bat again")
+        # Start.bat runs the script minimized, so a message box is the only way to be seen.
+        user32.MessageBoxW(None, "Bongo Cat is not running.\n\nOpen the game, then run Start.bat again.",
+                           "Bongo Auto", MB_ICONWARNING)
+        sys.exit(1)
+    place_cat(window)
     if "--place" in sys.argv:
         return
     log(f"running: clicks after {IDLE_SECONDS}s idle, stops when you touch the PC")
-    launch_value = read_counter() if window else None
+    launch_value = read_counter()
     launch_time = time.monotonic()
-    if window and launch_value is None:
+    if launch_value is None:
         log(f"counter not found at {COUNTER_BOX}: the cat's layout may not match this screen "
             "(see Adjusting positions in README.md) or the counter is hidden")
     else:
