@@ -91,6 +91,18 @@ class PlausibleGainTest(unittest.TestCase):
         self.assertFalse(bongo_auto.plausible_gain(800000, 60))  # a digit read twice
 
 
+class CounterRoseTest(unittest.TestCase):
+    def test_only_a_higher_number_is_progress(self):
+        self.assertTrue(bongo_auto.counter_rose(111835, 112100))
+        self.assertFalse(bongo_auto.counter_rose(111835, 111835))
+
+    def test_an_unreadable_counter_is_not_progress(self):
+        # 2026-11-08: 4 h of clicks off the cat while the counter read '?' the whole time
+        self.assertFalse(bongo_auto.counter_rose(None, None))
+        self.assertFalse(bongo_auto.counter_rose(111835, None))
+        self.assertFalse(bongo_auto.counter_rose(None, 111835))
+
+
 class FormatTest(unittest.TestCase):
     def test_count_uses_dots_for_thousands(self):
         self.assertEqual(bongo_auto.fmt_count(74739), "74.739")

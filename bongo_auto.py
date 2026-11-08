@@ -339,6 +339,14 @@ MAX_TOQUES_PER_SECOND = 30  # well above the ~14/s the clicks reach, leaving roo
 GAIN_SLACK = 200  # toques you may add by hand around a session
 
 
+def counter_rose(previous, current):
+    """True only when both reads are numbers and the second is higher.
+
+    Comparing pixels was fooled: the wiggle itself changed the picture, so a cat that
+    was not where we clicked looked 'stuck', then 'rising again', forever."""
+    return previous is not None and current is not None and current > previous
+
+
 def plausible_gain(gain, seconds):
     """False when OCR misread the counter, e.g. something covered digits ('81' for '81.768')."""
     return -GAIN_SLACK <= gain <= MAX_TOQUES_PER_SECOND * seconds + GAIN_SLACK
@@ -488,6 +496,7 @@ def main():
     last_guard_check = 0.0
     next_start_attempt = 0.0
     last_counter = None
+    claims_at_last_check = 0
     last_counter_check = 0.0
     stuck_count = 0
     while True:
@@ -526,12 +535,16 @@ def main():
                 continue
             if now - last_counter_check >= COUNTER_CHECK_SECONDS:
                 last_counter_check = now
-                snapshot = counter_snapshot()
-                if snapshot is not None and last_counter is not None:
-                    if snapshot != last_counter:
+                if counter_snapshot() is not None:  # None: screen locked, nothing to judge
+                    value = read_counter()
+                    if session_claims != claims_at_last_check:  # a claim spends toques
+                        claims_at_last_check = session_claims
+                    elif counter_rose(last_counter, value):
                         if stuck_count:
                             log("counter rising again")
                         stuck_count = 0
+                    elif last_counter is None and value is not None:
+                        pass  # first good read: nothing to compare with yet
                     else:
                         stuck_count += 1
                         if stuck_count == 1:
@@ -544,9 +557,9 @@ def main():
                             log("counter still stuck: putting the cat back in position")
                             place_cat(window)
                             stuck_count = 0
-                        snapshot = counter_snapshot()
+                        value = read_counter()
                         last_counter_check = time.monotonic()
-                last_counter = snapshot
+                    last_counter = value
                 continue  # re-run the "you are back" check before clicking again
             click()
             time.sleep(CLICK_GAP_SECONDS)
@@ -559,12 +572,11 @@ def main():
             time.sleep(0.2)
             if cursor_position() == CAT_HEAD and window_at(CAT_HEAD) == window:
                 clicking = True
-                last_counter = counter_snapshot()
                 last_counter_check = time.monotonic()
                 stuck_count = 0
-                session_value = read_counter()
+                session_value = last_counter = read_counter()
                 session_start = time.monotonic()
-                session_claims = 0
+                session_claims = claims_at_last_check = 0
                 log(f"idle: clicking the cat | counter {fmt_count(session_value)}")
             else:
                 next_start_attempt = now + RETRY_START_SECONDS
