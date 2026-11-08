@@ -453,7 +453,10 @@ function renderItems() {
     return `<div class="item">${tier}${i.count > 1 ? `<span class="qty">×${i.count}</span>` : ''}
       <div class="art">${i.icon ? `<img src="${esc(i.icon)}" alt="" loading="lazy">` : ''}</div>
       <div class="n">${esc(i.name)}</div><div class="x">${esc(i.type)}</div><div class="p">${p}</div></div>`;
-  }).join('') || '<div class="empty" style="grid-column:1/-1"><span class="e">🔍</span>No items match these filters.</div>';
+  }).join('') || (inv.items.length
+    ? '<div class="empty" style="grid-column:1/-1"><span class="e">🔍</span>No items match these filters.</div>'
+    : `<div class="empty" style="grid-column:1/-1"><span class="e">⏳</span>Inventory not loaded yet.<br>${
+        inv.error ? 'Steam is limiting requests; it will load on the next retry.' : 'Loading from Steam…'}</div>`);
 }
 
 async function refreshInventory() {

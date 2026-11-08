@@ -38,7 +38,8 @@ MARKET_URL = (
 )
 ICON_URL = "https://community.cloudflare.steamstatic.com/economy/image/{}/96fx96f"
 INVENTORY_REFRESH_SECONDS = 600
-INVENTORY_RETRY_SECONDS = 120
+INVENTORY_RETRY_SECONDS = 600  # retrying sooner keeps Steam's 429 block alive
+INVENTORY_PATH = os.path.join(HERE, "inventory.json")  # last good inventory, shown after a restart
 MARKET_REFRESH_SECONDS = 1800  # the whole market of the game, ~6 requests
 MARKET_PAGE_GAP_SECONDS = 5
 MARKET_RETRY_SECONDS = 600  # retrying sooner keeps Steam's 429 block alive
@@ -364,17 +365,28 @@ def log_new_items(assets):
 
 
 def inventory_worker():
+    try:
+        with open(INVENTORY_PATH, encoding="utf-8") as f:
+            saved = json.load(f)
+        with state_lock:
+            inventory.update(items=saved["items"], updated=saved["updated"], account=saved.get("account"))
+    except (OSError, ValueError, KeyError):
+        pass
     while True:
         try:
             items, assets = fetch_inventory()
             log_new_items(assets)
+            updated = datetime.now().strftime("%d/%m %H:%M")
             with state_lock:
-                inventory.update(items=items, updated=datetime.now().strftime("%H:%M"), error=None)
+                inventory.update(items=items, updated=updated, error=None)
+                account = inventory["account"]
+            with open(INVENTORY_PATH, "w", encoding="utf-8") as f:
+                json.dump({"items": items, "updated": updated, "account": account}, f)
             wait = INVENTORY_REFRESH_SECONDS
         except Exception as error:  # network or Steam errors only change what the panel shows
             message = str(error)
             if "429" in message:
-                message = "Steam is rate-limiting requests (429); retrying in a few minutes"
+                message = "Steam is rate-limiting inventory requests (429); retrying in 10 min"
             elif "403" in message:
                 message = "The Steam inventory is private (403)"
             with state_lock:
