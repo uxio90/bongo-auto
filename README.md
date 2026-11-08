@@ -39,7 +39,10 @@ prices.
 | Stop the farmer | `Stop.bat` | Stops `bongo_auto.py`. |
 | Open the panel | `Panel.bat` | Restarts `panel.py` and opens http://localhost:8765. |
 
-Start Bongo Cat first, then `Start.bat`. Tip: create desktop shortcuts to the three `.bat` files
+Start Bongo Cat first, then `Start.bat`. If the game window does not appear within 30 s, the farmer
+does not start: it shows a warning on top of other windows and logs `Bongo Cat is not open: not
+starting`. If the game is closed while the farmer runs, the session is closed in the log and the
+farmer waits for the game to come back. Tip: create desktop shortcuts to the three `.bat` files
 (right click → *Send to* → *Desktop*); set them to run minimized.
 
 From a terminal: `python bongo_auto.py` (Ctrl+C to stop), `python bongo_auto.py --place` (only move

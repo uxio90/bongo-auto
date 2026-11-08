@@ -3,6 +3,7 @@
 Run:  python bongo_auto.py          (Ctrl+C or close the window to stop)
 Test: python bongo_auto.py --place  (only move the cat into position, then exit)
 
+It refuses to start (log line plus a message box) when Bongo Cat is not open.
 On start the cat is sent to the game's default spot with F1 and dragged into position.
 Simulated input only counts on the cat itself, so it clicks there at the fastest speed
 the game registers, after IDLE_SECONDS without you touching the PC. Moving the mouse or
@@ -47,6 +48,7 @@ DRAG_STEPS = 40
 CLICK_HOLD_SECONDS = 0.035  # measured: ~14 clicks/s all count; 18/s and 22/s lose many
 CLICK_GAP_SECONDS = 0.035
 IDLE_SECONDS = 15
+WAIT_FOR_GAME_SECONDS = 30  # at start, how long to wait for the game window before giving up
 CHEST_CHECK_SECONDS = 60  # also how often a ready chest is retried
 GUARD_CHECK_SECONDS = 1
 RETRY_START_SECONDS = 30  # after failing to start clicking, e.g. session locked
@@ -66,6 +68,8 @@ MOUSEEVENTF_LEFTDOWN = 0x0002
 MOUSEEVENTF_LEFTUP = 0x0004
 GA_ROOT = 2
 MB_ICONWARNING = 0x30
+MB_SETFOREGROUND = 0x10000
+MB_TOPMOST = 0x40000
 
 
 class LASTINPUTINFO(ctypes.Structure):
@@ -257,6 +261,16 @@ def game_window():
     return user32.FindWindowW(None, WINDOW_TITLE)
 
 
+def wait_for_game(seconds):
+    """The game window, waiting up to `seconds` for it: right after launch it takes a moment to appear."""
+    deadline = time.monotonic() + seconds
+    while True:
+        window = game_window()
+        if window or time.monotonic() >= deadline:
+            return window
+        time.sleep(1)
+
+
 def idle_seconds():
     info = LASTINPUTINFO(cbSize=ctypes.sizeof(LASTINPUTINFO))
     user32.GetLastInputInfo(ctypes.byref(info))
@@ -399,27 +413,35 @@ def place_cat(window):
         log("cat moved into position, chests and counter not found on screen: using computed positions")
 
 
+def refuse_to_start(log_line, warning):
+    """Log why, show it on top (Start.bat runs us minimized, so the log alone goes unseen) and exit."""
+    log(log_line)
+    user32.MessageBoxW(None, warning, "Bongo Auto", MB_ICONWARNING | MB_SETFOREGROUND | MB_TOPMOST)
+    sys.exit(1)
+
+
 def main():
     user32.SetProcessDPIAware()
-    window = game_window()
-    if window and game_runs_as_admin_over_us(window):
-        log("Bongo Cat runs as administrator: Windows blocks our clicks on it. Not starting. "
-            "Untick 'Run this program as an administrator' in BongoCat.exe properties and restart the game")
-        user32.MessageBoxW(None, "Bongo Cat is running as administrator, so Windows blocks the farmer's "
-                           "clicks.\n\nIn BongoCat.exe > Properties > Compatibility, untick 'Run this program "
-                           "as an administrator', restart the game and run Start.bat again.",
-                           "Bongo Auto", MB_ICONWARNING)
-        sys.exit(1)
-    if window:
-        place_cat(window)
-    else:
-        log("Bongo Cat is not open; cat not moved")
+    window = wait_for_game(WAIT_FOR_GAME_SECONDS)
+    if not window:
+        refuse_to_start(
+            f"Bongo Cat is not open: not starting (waited {WAIT_FOR_GAME_SECONDS}s). "
+            "Open the game, then start the farmer again",
+            "Bongo Cat is not running.\n\nOpen the game, then start the farmer again.")
+    if game_runs_as_admin_over_us(window):
+        refuse_to_start(
+            "Bongo Cat runs as administrator: Windows blocks our clicks on it. Not starting. "
+            "Untick 'Run this program as an administrator' in BongoCat.exe properties and restart the game",
+            "Bongo Cat is running as administrator, so Windows blocks the farmer's clicks.\n\n"
+            "In BongoCat.exe > Properties > Compatibility, untick 'Run this program as an administrator', "
+            "restart the game and start the farmer again.")
+    place_cat(window)
     if "--place" in sys.argv:
         return
     log(f"running: clicks after {IDLE_SECONDS}s idle, stops when you touch the PC")
-    launch_value = read_counter() if window else None
+    launch_value = read_counter()
     launch_time = time.monotonic()
-    if window and launch_value is None:
+    if launch_value is None:
         log(f"counter not found at {COUNTER_BOX}: the cat's layout may not match this screen "
             "(see Adjusting positions in README.md) or the counter is hidden")
     else:
@@ -459,7 +481,11 @@ def main():
         window = game_window()
         now = time.monotonic()
         if not window:
-            clicking = False
+            if clicking:  # the game was closed mid-session: close the session like a pause
+                clicking = False
+                if user_foreground:
+                    user32.SetForegroundWindow(user_foreground)
+                end_session("Bongo Cat closed: clicks paused until it is back")
             time.sleep(1)
             continue
 

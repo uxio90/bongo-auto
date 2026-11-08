@@ -143,5 +143,50 @@ class RotateLogTest(unittest.TestCase):
         self.assertEqual(self.read(self.path + ".1"), "current log, past the limit")
 
 
+class StartupTest(unittest.TestCase):
+    def setUp(self):
+        for patch in (mock.patch.object(bongo_auto.user32, "SetProcessDPIAware"),
+                      mock.patch.object(bongo_auto.time, "sleep")):
+            patch.start()
+            self.addCleanup(patch.stop)
+
+    def test_refuses_to_start_without_the_game(self):
+        with mock.patch.object(bongo_auto, "game_window", return_value=0), \
+                mock.patch.object(bongo_auto, "WAIT_FOR_GAME_SECONDS", 0), \
+                mock.patch.object(bongo_auto.user32, "MessageBoxW") as box, \
+                mock.patch.object(bongo_auto, "log") as log, \
+                mock.patch.object(bongo_auto, "place_cat") as place:
+            with self.assertRaises(SystemExit) as stop:
+                bongo_auto.main()
+        self.assertEqual(stop.exception.code, 1)
+        self.assertIn("not open", log.call_args[0][0])
+        self.assertFalse(place.called)
+        flags = box.call_args[0][3]
+        for flag in (bongo_auto.MB_ICONWARNING, bongo_auto.MB_SETFOREGROUND, bongo_auto.MB_TOPMOST):
+            self.assertTrue(flags & flag, hex(flag))  # on top: Start.bat runs us minimized
+
+    def test_refuses_to_start_on_a_game_running_as_admin(self):
+        with mock.patch.object(bongo_auto, "game_window", return_value=42), \
+                mock.patch.object(bongo_auto, "game_runs_as_admin_over_us", return_value=True), \
+                mock.patch.object(bongo_auto.user32, "MessageBoxW") as box, \
+                mock.patch.object(bongo_auto, "log") as log, \
+                mock.patch.object(bongo_auto, "place_cat") as place:
+            with self.assertRaises(SystemExit):
+                bongo_auto.main()
+        self.assertIn("administrator", log.call_args[0][0])
+        self.assertTrue(box.call_args[0][3] & bongo_auto.MB_TOPMOST)
+        self.assertFalse(place.called)
+
+    def test_waits_for_a_game_window_that_appears_late(self):
+        with mock.patch.object(bongo_auto, "game_window", side_effect=[0, 0, 42]):
+            self.assertEqual(bongo_auto.wait_for_game(30), 42)
+
+    def test_gives_up_waiting_after_the_timeout(self):
+        clock = iter(range(0, 100, 10))
+        with mock.patch.object(bongo_auto, "game_window", return_value=0), \
+                mock.patch.object(bongo_auto.time, "monotonic", side_effect=lambda: next(clock)):
+            self.assertEqual(bongo_auto.wait_for_game(30), 0)
+
+
 if __name__ == "__main__":
     unittest.main()
