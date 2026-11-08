@@ -80,6 +80,17 @@ class ElevationTest(unittest.TestCase):
                 self.assertEqual(bongo_auto.game_runs_as_admin_over_us(0), blocked, (game, farmer))
 
 
+class PlausibleGainTest(unittest.TestCase):
+    def test_real_sessions_pass(self):
+        self.assertTrue(bongo_auto.plausible_gain(681, 57))  # 11.8/s
+        self.assertTrue(bongo_auto.plausible_gain(0, 20))
+        self.assertTrue(bongo_auto.plausible_gain(-5, 3))  # read just before a late digit change
+
+    def test_misreads_fail(self):
+        self.assertFalse(bongo_auto.plausible_gain(81 - 81767, 18))  # '81' read for '81.768'
+        self.assertFalse(bongo_auto.plausible_gain(800000, 60))  # a digit read twice
+
+
 class FormatTest(unittest.TestCase):
     def test_count_uses_dots_for_thousands(self):
         self.assertEqual(bongo_auto.fmt_count(74739), "74.739")
