@@ -32,6 +32,54 @@ class LayoutTest(unittest.TestCase):
         self.assertEqual(layout["grab"], (966, 512))
 
 
+class FindCatTest(unittest.TestCase):
+    """The chest and counter boxes as measured in multiplayer, drawn on a dark background."""
+
+    LIGHT = (232, 232, 230)
+    ITEMS, EMOTES, COUNTER = (32, 52, 70, 98), (137, 52, 175, 96), (48, 102, 126, 124)
+
+    def scene(self, *boxes):
+        from PIL import Image, ImageDraw
+        image = Image.new("RGB", (280, 205), (24, 24, 26))
+        draw = ImageDraw.Draw(image)
+        for box in boxes:
+            draw.rectangle((box[0], box[1], box[2] - 1, box[3] - 1), fill=self.LIGHT)
+        draw.text((60, 106), "78 713", fill=(70, 60, 60))  # digits split the counter's pixels a little
+        return image
+
+    def test_light_boxes_finds_each_box(self):
+        boxes = bongo_auto.light_boxes(self.scene(self.ITEMS, self.EMOTES, self.COUNTER))
+        self.assertIn(self.ITEMS, boxes)
+        self.assertIn(self.EMOTES, boxes)
+        self.assertEqual(len(boxes), 3)
+
+    def test_cat_points_come_from_the_boxes(self):
+        found = bongo_auto.cat_from_boxes([self.ITEMS, self.EMOTES, self.COUNTER])
+        self.assertEqual(found["chests"], {"TIME_LEFT_h": (51, 75), "EMOTE_CHEST_TIME_LEFT_h": (156, 74)})
+        self.assertEqual(found["head"], (103, 74))
+        self.assertEqual(found["counter"], (50, 104, 124, 123))
+
+    def test_a_name_tag_is_not_taken_for_the_counter(self):
+        name_tag = (150, 10, 260, 32)  # another player's cat name, as wide as a counter
+        found = bongo_auto.cat_from_boxes([name_tag, self.ITEMS, self.EMOTES, self.COUNTER])
+        self.assertEqual(found["counter"], (50, 104, 124, 123))
+
+    def test_nothing_found_without_both_chests(self):
+        self.assertIsNone(bongo_auto.cat_from_boxes([self.ITEMS, self.COUNTER]))
+        self.assertIsNone(bongo_auto.cat_from_boxes([]))
+
+
+class ElevationTest(unittest.TestCase):
+    def test_reads_our_own_process(self):
+        self.assertIn(bongo_auto.is_elevated(os.getpid()), (True, False))
+
+    def test_only_an_elevated_game_over_a_normal_farmer_blocks(self):
+        cases = {(True, False): True, (True, True): False, (False, False): False, (None, False): False}
+        for (game, farmer), blocked in cases.items():
+            with mock.patch.object(bongo_auto, "is_elevated", side_effect=[game, farmer]):
+                self.assertEqual(bongo_auto.game_runs_as_admin_over_us(0), blocked, (game, farmer))
+
+
 class FormatTest(unittest.TestCase):
     def test_count_uses_dots_for_thousands(self):
         self.assertEqual(bongo_auto.fmt_count(74739), "74.739")
@@ -116,6 +164,18 @@ class StartupTest(unittest.TestCase):
         flags = box.call_args[0][3]
         for flag in (bongo_auto.MB_ICONWARNING, bongo_auto.MB_SETFOREGROUND, bongo_auto.MB_TOPMOST):
             self.assertTrue(flags & flag, hex(flag))  # on top: Start.bat runs us minimized
+
+    def test_refuses_to_start_on_a_game_running_as_admin(self):
+        with mock.patch.object(bongo_auto, "game_window", return_value=42), \
+                mock.patch.object(bongo_auto, "game_runs_as_admin_over_us", return_value=True), \
+                mock.patch.object(bongo_auto.user32, "MessageBoxW") as box, \
+                mock.patch.object(bongo_auto, "log") as log, \
+                mock.patch.object(bongo_auto, "place_cat") as place:
+            with self.assertRaises(SystemExit):
+                bongo_auto.main()
+        self.assertIn("administrator", log.call_args[0][0])
+        self.assertTrue(box.call_args[0][3] & bongo_auto.MB_TOPMOST)
+        self.assertFalse(place.called)
 
     def test_waits_for_a_game_window_that_appears_late(self):
         with mock.patch.object(bongo_auto, "game_window", side_effect=[0, 0, 42]):

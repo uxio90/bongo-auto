@@ -151,6 +151,8 @@ def script_state(entries):
             return "waiting", "Waiting for 15 s without activity", when
         if message.startswith("Bongo Cat is not open: not starting"):
             return "stopped", "Not started: Bongo Cat is not open", when
+        if message.startswith("Bongo Cat runs as administrator"):
+            return "stopped", "Not started: Bongo Cat runs as administrator", when
         if message.startswith("Bongo Cat closed"):
             return "paused", "Paused: Bongo Cat is closed", when
     return "unknown", "No data in the log", None

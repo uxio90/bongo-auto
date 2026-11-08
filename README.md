@@ -25,6 +25,9 @@ prices.
   | Lock position / ignore mouse | off | The script drags the cat into place and clicks it. |
   | Chest animation, show AFK indicator | any | Not needed by the script. |
 
+- Bongo Cat must **not run as administrator** (BongoCat.exe > Properties > Compatibility > *Run this
+  program as an administrator* unticked). Windows blocks a normal program's clicks on an elevated
+  window, so the farmer refuses to start and says so if the game is elevated.
 - The PC must stay **unlocked**: Windows ignores simulated input on the lock screen. While the script
   clicks, Windows sees activity, so it does not lock by idle on its own.
 
@@ -49,7 +52,9 @@ the cat and exit), `python panel.py`.
 
 1. **Places the cat**: F1 resets it to the centre of the game window, then it is dragged to the
    bottom-right corner. This is repeated before every clicking session, because moving the mouse while a click is
-   held drags the cat away.
+   held drags the cat away. The cat can land a few pixels off (it does in multiplayer), so the script
+   then finds its two chests and counter on screen (light grey boxes) and aims the clicks there,
+   falling back to the computed positions if they are not found.
 2. **Clicks only when you are away**: after 15 s without keyboard/mouse input it clicks the cat at
    ~12–14 clicks/s (the fastest rate the game counts). Touching the mouse or a key pauses it at once.
 3. **Checks the clicks count**: every 20 s it compares the counter on screen. If it has not moved, it
