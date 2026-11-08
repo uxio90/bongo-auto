@@ -363,7 +363,7 @@ function drawDrops(drops) {
 function logKind(line) {
   if (/chest claimed|ready: click sent$/.test(line)) return ['claim', '🎁'];
   if (/new item:/.test(line)) return ['item', '✨'];
-  if (/stuck|not claimed|unreadable|could not|not open/.test(line)) return ['bad', '⚠️'];
+  if (/stuck|not claimed|unreadable|could not|not open|not found/.test(line)) return ['bad', '⚠️'];
   if (/session:/.test(line)) return ['session', '📈'];
   if (/idle: clicking/.test(line)) return ['', '▶️'];
   if (/you are back|another window/.test(line)) return ['', '⏸️'];
