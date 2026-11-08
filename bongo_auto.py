@@ -335,6 +335,15 @@ def read_counter():
     return int(digits) if digits else None
 
 
+MAX_TOQUES_PER_SECOND = 30  # well above the ~14/s the clicks reach, leaving room for your own typing
+GAIN_SLACK = 200  # toques you may add by hand around a session
+
+
+def plausible_gain(gain, seconds):
+    """False when OCR misread the counter, e.g. something covered digits ('81' for '81.768')."""
+    return -GAIN_SLACK <= gain <= MAX_TOQUES_PER_SECOND * seconds + GAIN_SLACK
+
+
 def fmt_count(value):
     return "?" if value is None else f"{value:,}".replace(",", ".")
 
@@ -460,6 +469,10 @@ def main():
             log(f"{reason} | session: counter unreadable, {fmt_duration(seconds)}")
             return
         gain = end_value - session_value + session_claims * CHEST_COST
+        if not plausible_gain(gain, seconds):
+            log(f"{reason} | session: counter read looks wrong ({fmt_count(session_value)} -> "
+                f"{fmt_count(end_value)} in {fmt_duration(seconds)}), not counted")
+            return
         total_gain += gain
         rate = gain / seconds if seconds else 0
         log(
