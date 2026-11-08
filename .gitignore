@@ -3,3 +3,4 @@ __pycache__/
 prices.json
 *.log.*
 known_assets.json
+inventory.json
