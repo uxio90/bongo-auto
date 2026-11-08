@@ -48,6 +48,7 @@ DRAG_STEPS = 40
 CLICK_HOLD_SECONDS = 0.035  # measured: ~14 clicks/s all count; 18/s and 22/s lose many
 CLICK_GAP_SECONDS = 0.035
 IDLE_SECONDS = 15
+WAIT_FOR_GAME_SECONDS = 30  # at start, how long to wait for the game window before giving up
 CHEST_CHECK_SECONDS = 60  # also how often a ready chest is retried
 GUARD_CHECK_SECONDS = 1
 RETRY_START_SECONDS = 30  # after failing to start clicking, e.g. session locked
@@ -67,6 +68,8 @@ MOUSEEVENTF_LEFTDOWN = 0x0002
 MOUSEEVENTF_LEFTUP = 0x0004
 GA_ROOT = 2
 MB_ICONWARNING = 0x30
+MB_SETFOREGROUND = 0x10000
+MB_TOPMOST = 0x40000
 
 
 class LASTINPUTINFO(ctypes.Structure):
@@ -146,6 +149,16 @@ def log(message):
 
 def game_window():
     return user32.FindWindowW(None, WINDOW_TITLE)
+
+
+def wait_for_game(seconds):
+    """The game window, waiting up to `seconds` for it: right after launch it takes a moment to appear."""
+    deadline = time.monotonic() + seconds
+    while True:
+        window = game_window()
+        if window or time.monotonic() >= deadline:
+            return window
+        time.sleep(1)
 
 
 def idle_seconds():
@@ -288,12 +301,13 @@ def place_cat(window):
 
 def main():
     user32.SetProcessDPIAware()
-    window = game_window()
+    window = wait_for_game(WAIT_FOR_GAME_SECONDS)
     if not window:
-        log("Bongo Cat is not open: not starting. Open the game, then run Start.bat again")
-        # Start.bat runs the script minimized, so a message box is the only way to be seen.
-        user32.MessageBoxW(None, "Bongo Cat is not running.\n\nOpen the game, then run Start.bat again.",
-                           "Bongo Auto", MB_ICONWARNING)
+        log(f"Bongo Cat is not open: not starting (waited {WAIT_FOR_GAME_SECONDS}s). "
+            "Open the game, then start the farmer again")
+        # Start.bat runs the script minimized, so a message box on top is the only way to be seen.
+        user32.MessageBoxW(None, "Bongo Cat is not running.\n\nOpen the game, then start the farmer again.",
+                           "Bongo Auto", MB_ICONWARNING | MB_SETFOREGROUND | MB_TOPMOST)
         sys.exit(1)
     place_cat(window)
     if "--place" in sys.argv:
@@ -341,7 +355,11 @@ def main():
         window = game_window()
         now = time.monotonic()
         if not window:
-            clicking = False
+            if clicking:  # the game was closed mid-session: close the session like a pause
+                clicking = False
+                if user_foreground:
+                    user32.SetForegroundWindow(user_foreground)
+                end_session("Bongo Cat closed: clicks paused until it is back")
             time.sleep(1)
             continue
 

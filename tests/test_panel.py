@@ -65,6 +65,13 @@ class ScriptStateTest(unittest.TestCase):
     def test_empty_log(self):
         self.assertEqual(panel.script_state([])[0], "unknown")
 
+    def test_refusal_and_closed_game_hide_the_previous_run(self):
+        entries = [at(0, "idle: clicking the cat | counter 1.000")]
+        refused = at(5, "Bongo Cat is not open: not starting (waited 30s). Open the game, then start the farmer again")
+        self.assertEqual(panel.script_state(entries + [refused])[0], "stopped")
+        closed = at(5, "Bongo Cat closed: clicks paused until it is back | session: counter unreadable, 0m 30s")
+        self.assertEqual(panel.script_state(entries + [closed])[0], "paused")
+
 
 class ClaimsTest(unittest.TestCase):
     def test_retries_within_five_minutes_count_once(self):
