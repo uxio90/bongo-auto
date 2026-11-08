@@ -5,9 +5,13 @@ from the PC: it clicks the cat to raise the toque counter and claims both chests
 every 30 minutes. A local web panel shows what it is doing, the drops and your inventory with market
 prices.
 
+> **Use at your own risk.** This automates input to a Steam game. Automation may break the game's or
+> Steam's terms, and accounts flagged for it could lose access to items or the market. It is shared
+> as-is, without any warranty.
+
 ## Requirements
 
-- Windows 10/11 and Python 3 with Pillow (`pip install pillow`).
+- Windows 10/11 and Python 3, with the dependencies installed: `pip install -r requirements.txt`.
 - Bongo Cat running on any monitor and resolution: positions are worked out from the game window
   (see [How positions are found](#how-positions-are-found)).
 - Bongo Cat settings (Spanish UI label in brackets):
@@ -91,3 +95,7 @@ The offsets were measured at 2560×1440 with the cat at scale 1 (F1 resets the s
 cat keeps the same size in pixels on other resolutions; if the game scaled it, the log says
 `counter not found at …` on start. In that case run `python bongo_auto.py --place` and adjust the
 `*_FROM_CORNER` offsets at the top of `bongo_auto.py`.
+
+## License
+
+[MIT](LICENSE)
