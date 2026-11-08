@@ -79,6 +79,17 @@ inventory must be public. Steam rate-limits its public endpoints: the inventory 
 
 No screenshots are kept: the live view and counter checks are made in memory.
 
+## Tests
+
+```
+python -m unittest discover -s tests -v
+```
+
+They cover what does not need the game running: the layout maths, log rotation and formatting in
+`bongo_auto.py`, and in `panel.py` the log parsing (state, sessions, chests, drops, activity), the
+Steam account lookup and the inventory and market paging (with Steam's answers mocked). Clicking the
+game itself is checked by hand. GitHub Actions runs them on Windows for every pull request.
+
 ## How positions are found
 
 The Bongo Cat window covers its whole monitor. F1 puts the cat at the window's centre and the script
