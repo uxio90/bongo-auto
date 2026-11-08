@@ -65,6 +65,7 @@ KEYEVENTF_KEYUP = 0x0002
 MOUSEEVENTF_LEFTDOWN = 0x0002
 MOUSEEVENTF_LEFTUP = 0x0004
 GA_ROOT = 2
+MB_ICONWARNING = 0x30
 
 
 class LASTINPUTINFO(ctypes.Structure):
@@ -114,11 +115,121 @@ def update_layout(window):
     CHESTS, COUNTER_BOX, VIEW_BOX = layout["chests"], layout["counter"], layout["view"]
 
 
+def is_elevated(pid):
+    """True if the process runs as administrator; None if that can't be read."""
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    process = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+    if not process:
+        return None
+    token = wintypes.HANDLE()
+    try:
+        if not ctypes.windll.advapi32.OpenProcessToken(process, 0x0008, ctypes.byref(token)):  # TOKEN_QUERY
+            return None
+        elevation, size = wintypes.DWORD(), wintypes.DWORD()
+        ok = ctypes.windll.advapi32.GetTokenInformation(token, 20, ctypes.byref(elevation), 4, ctypes.byref(size))
+        return bool(elevation.value) if ok else None
+    finally:
+        if token:
+            kernel32.CloseHandle(token)
+        kernel32.CloseHandle(process)
+
+
+def game_runs_as_admin_over_us(window):
+    """Windows ignores our cursor moves and clicks on an elevated game unless we are elevated too."""
+    pid = wintypes.DWORD()
+    user32.GetWindowThreadProcessId(window, ctypes.byref(pid))
+    return is_elevated(pid.value) is True and not is_elevated(os.getpid())
+
+
 def grab(box):
     """Screenshot of a screen box; reads every monitor only when the box is off the primary one."""
     on_primary = (box[0] >= 0 and box[1] >= 0 and box[2] <= user32.GetSystemMetrics(SM_CXSCREEN)
                   and box[3] <= user32.GetSystemMetrics(SM_CYSCREEN))
     return ImageGrab.grab(bbox=box, all_screens=not on_primary)
+
+
+# Finding the cat on screen. After the drag the cat can sit a few pixels away from the computed
+# spot (it does in multiplayer), so the chests and counter are looked up: they are light grey
+# boxes, two chests side by side with the counter just below them.
+SEARCH_FROM_CORNER = (-300, -250, -20, -45)
+MIN_BOX_PIXELS = 150
+
+
+def is_light(pixel):
+    return min(pixel[:3]) >= 215 and max(pixel[:3]) - min(pixel[:3]) <= 18
+
+
+def light_boxes(image):
+    """Bounding boxes (left, top, right, bottom) of the light grey blobs in an RGB image."""
+    width, height = image.size
+    pixels = image.load()
+    seen = bytearray(width * height)
+    boxes = []
+    for y in range(height):
+        for x in range(width):
+            if seen[y * width + x] or not is_light(pixels[x, y]):
+                continue
+            seen[y * width + x] = 1
+            stack, count = [(x, y)], 0
+            left, top, right, bottom = x, y, x, y
+            while stack:
+                cx, cy = stack.pop()
+                count += 1
+                left, top, right, bottom = min(left, cx), min(top, cy), max(right, cx), max(bottom, cy)
+                for nx, ny in ((cx + 1, cy), (cx - 1, cy), (cx, cy + 1), (cx, cy - 1)):
+                    if 0 <= nx < width and 0 <= ny < height and not seen[ny * width + nx] \
+                            and is_light(pixels[nx, ny]):
+                        seen[ny * width + nx] = 1
+                        stack.append((nx, ny))
+            if count >= MIN_BOX_PIXELS:
+                boxes.append((left, top, right + 1, bottom + 1))
+    return boxes
+
+
+def cat_from_boxes(boxes):
+    """Points of the cat from its two chest boxes and counter box, or None if they aren't there."""
+    chests = [b for b in boxes if 28 <= b[2] - b[0] <= 55 and 28 <= b[3] - b[1] <= 60]
+    counters = [b for b in boxes if 50 <= b[2] - b[0] <= 130 and 14 <= b[3] - b[1] <= 32]
+    for left in chests:
+        for right in chests:
+            gap = right[0] - left[2]
+            if not (40 <= gap <= 100 and abs(right[1] - left[1]) <= 6):
+                continue
+            items = ((left[0] + left[2]) // 2, (left[1] + left[3]) // 2)
+            emotes = ((right[0] + right[2]) // 2, (right[1] + right[3]) // 2)
+            chest_bottom = max(left[3], right[3])
+            for counter in counters:
+                below = counter[1] - chest_bottom
+                if 0 <= below <= 20 and left[0] - 10 <= counter[0] <= emotes[0]:
+                    return {
+                        "head": ((items[0] + emotes[0]) // 2, (items[1] + emotes[1]) // 2),
+                        "chests": {"TIME_LEFT_h": items, "EMOTE_CHEST_TIME_LEFT_h": emotes},
+                        "counter": (counter[0] + 2, counter[1] + 2, counter[2] - 2, counter[3] - 1),
+                    }
+    return None
+
+
+def locate_cat(window):
+    """Look the cat up on screen and point the clicks at it. True if it was found."""
+    global CAT_HEAD, CHESTS, COUNTER_BOX
+    rect = wintypes.RECT()
+    user32.GetWindowRect(window, ctypes.byref(rect))
+    left, top = rect.right + SEARCH_FROM_CORNER[0], rect.bottom + SEARCH_FROM_CORNER[1]
+    try:
+        image = grab((left, top, rect.right + SEARCH_FROM_CORNER[2], rect.bottom + SEARCH_FROM_CORNER[3]))
+    except OSError:
+        return False
+    found = cat_from_boxes(light_boxes(image.convert("RGB")))
+    if not found:
+        return False
+
+    def to_screen(x, y):
+        return left + x, top + y
+
+    CAT_HEAD = to_screen(*found["head"])
+    CHESTS = {prefix: to_screen(*point) for prefix, point in found["chests"].items()}
+    COUNTER_BOX = to_screen(*found["counter"][:2]) + to_screen(*found["counter"][2:])
+    return True
 
 
 def rotate_log():
@@ -281,12 +392,24 @@ def place_cat(window):
     user32.SetCursorPos(*original)
     if foreground:
         user32.SetForegroundWindow(foreground)
-    log("cat moved into position")
+    time.sleep(0.3)  # let the chests and counter settle before looking for them
+    if locate_cat(window):
+        log(f"cat moved into position, found at {CAT_HEAD}")
+    else:
+        log("cat moved into position, chests and counter not found on screen: using computed positions")
 
 
 def main():
     user32.SetProcessDPIAware()
     window = game_window()
+    if window and game_runs_as_admin_over_us(window):
+        log("Bongo Cat runs as administrator: Windows blocks our clicks on it. Not starting. "
+            "Untick 'Run this program as an administrator' in BongoCat.exe properties and restart the game")
+        user32.MessageBoxW(None, "Bongo Cat is running as administrator, so Windows blocks the farmer's "
+                           "clicks.\n\nIn BongoCat.exe > Properties > Compatibility, untick 'Run this program "
+                           "as an administrator', restart the game and run Start.bat again.",
+                           "Bongo Auto", MB_ICONWARNING)
+        sys.exit(1)
     if window:
         place_cat(window)
     else:
