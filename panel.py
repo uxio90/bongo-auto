@@ -61,7 +61,11 @@ def steam_account():
     with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Valve\Steam") as key:
         steam_path = winreg.QueryValueEx(key, "SteamPath")[0]
     with open(os.path.join(steam_path, "config", "loginusers.vdf"), encoding="utf-8") as f:
-        text = f.read()
+        return parse_login_users(f.read())
+
+
+def parse_login_users(text):
+    """The MostRecent account in a loginusers.vdf, or the first one if none is marked."""
     accounts = []
     for steam_id, body in re.findall(r'"(\d{17})"\s*\{(.*?)\}', text, re.S):
         fields = dict(re.findall(r'"(\w+)"\s+"([^"]*)"', body))

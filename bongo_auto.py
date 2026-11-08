@@ -87,23 +87,31 @@ user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
 SM_CXSCREEN, SM_CYSCREEN = 0, 1
 
 
-def update_layout(window):
-    """Turn the offsets above into screen coordinates for the game window as it is now."""
-    global CAT_HEAD, CAT_DEFAULT_GRAB, CAT_DRAG_TO, CHESTS, COUNTER_BOX, VIEW_BOX
-    rect = wintypes.RECT()
-    user32.GetWindowRect(window, ctypes.byref(rect))
-    cx, cy = (rect.left + rect.right) // 2, (rect.top + rect.bottom) // 2
-    right, bottom = rect.right, rect.bottom
+def layout_for(left, top, right, bottom):
+    """Screen coordinates of every point the script uses, for a game window with this rect."""
+    cx, cy = (left + right) // 2, (top + bottom) // 2
 
     def corner(dx, dy):
         return right + dx, bottom + dy
 
-    CAT_DEFAULT_GRAB = (cx + GRAB_FROM_CENTER[0], cy + GRAB_FROM_CENTER[1])
-    CAT_DRAG_TO = corner(*DRAG_TO_FROM_CORNER)
-    CAT_HEAD = corner(*HEAD_FROM_CORNER)
-    CHESTS = {prefix: corner(*offset) for prefix, offset in CHESTS_FROM_CORNER.items()}
-    COUNTER_BOX = corner(*COUNTER_FROM_CORNER[:2]) + corner(*COUNTER_FROM_CORNER[2:])
-    VIEW_BOX = corner(*VIEW_FROM_CORNER[:2]) + corner(*VIEW_FROM_CORNER[2:])
+    return {
+        "grab": (cx + GRAB_FROM_CENTER[0], cy + GRAB_FROM_CENTER[1]),
+        "drag_to": corner(*DRAG_TO_FROM_CORNER),
+        "head": corner(*HEAD_FROM_CORNER),
+        "chests": {prefix: corner(*offset) for prefix, offset in CHESTS_FROM_CORNER.items()},
+        "counter": corner(*COUNTER_FROM_CORNER[:2]) + corner(*COUNTER_FROM_CORNER[2:]),
+        "view": corner(*VIEW_FROM_CORNER[:2]) + corner(*VIEW_FROM_CORNER[2:]),
+    }
+
+
+def update_layout(window):
+    """Point the module's coordinates at the game window as it is now."""
+    global CAT_HEAD, CAT_DEFAULT_GRAB, CAT_DRAG_TO, CHESTS, COUNTER_BOX, VIEW_BOX
+    rect = wintypes.RECT()
+    user32.GetWindowRect(window, ctypes.byref(rect))
+    layout = layout_for(rect.left, rect.top, rect.right, rect.bottom)
+    CAT_DEFAULT_GRAB, CAT_DRAG_TO, CAT_HEAD = layout["grab"], layout["drag_to"], layout["head"]
+    CHESTS, COUNTER_BOX, VIEW_BOX = layout["chests"], layout["counter"], layout["view"]
 
 
 def grab(box):
